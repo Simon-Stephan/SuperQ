@@ -474,7 +474,7 @@ erDiagram
 
 ### Configuration
 
-Create a `backend/.env` file:
+Create a `.env` file:
 
 ```env
 # --- API ---

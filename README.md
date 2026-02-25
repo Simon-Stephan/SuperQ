@@ -482,7 +482,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # --- Database ---
 DB_USER=postgres
-DB_PASSWORD=change_this_password
+DB_PASSWORD=do_not_use_this_password_in_production
 DB_NAME=superq_db
 DB_HOST=db
 DB_PORT=5432
@@ -549,11 +549,11 @@ npm run dev
 SuperQ/
 ├── docker-compose.yml
 ├── README.md
+├── .env
 │
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── .env
 │   └── app/
 │       ├── main.py                          # FastAPI entry point
 │       ├── models.py                        # SQLAlchemy ORM models

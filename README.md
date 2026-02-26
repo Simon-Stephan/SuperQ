@@ -477,21 +477,28 @@ erDiagram
 Create a `.env` file:
 
 ```env
-# --- API ---
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
+# --- API CONFIGURATION ---
+OPENROUTER_API_KEY=sk-or-v1-_your-key-openrouter-here
 
-# --- Database ---
+# --- DATABASE CONFIGURATION (PostgreSQL) ---
 DB_USER=postgres
 DB_PASSWORD=do_not_use_this_password_in_production
 DB_NAME=superq_db
 DB_HOST=db
 DB_PORT=5432
 
-# --- Agent Routing ---
+# --- AGENT ROUTING ---
 AGENT_ROUTER_ENABLED=true
 
-# --- Frontend ---
+# --- MODELS ---
+DEFAULT_CHAT_MODEL=mistralai/mistral-small-3.1-24b-instruct:free
+DEFAULT_SUMMARY_MODEL=openai/gpt-oss-20b:free
+FALLBACK_MODEL=google/gemma-3n-e4b-it:free
+DEFAULT_ROUTER_MODEL=google/gemma-3-12b-it:free
+
+# --- FRONTEND CONFIGURATION ---
 NEXT_PUBLIC_API_URL=http://localhost:8000
+
 ```
 
 ### Launch

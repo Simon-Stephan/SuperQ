@@ -61,12 +61,14 @@ class OrchestratorAgent(BaseAgent):
         """
         key, remaining_prompt = self._parse_slash_command(user_prompt)
 
+        print("---- 1. Slash agent ----")
         # 1. Slash -> agent (ex: /summary, /chat)
         if key and key in self.agent_registry:
             return await self._dispatch(
                 key, thread, context_messages, remaining_prompt, model_name, db
             )
 
+        print("---- 2. Slash tools ----")
         # 2. Slash -> tool (ex: /meteo Agadir, /heure)
         if key and key in self.tool_slash_registry:
             tool = self.tool_slash_registry[key]
@@ -80,6 +82,7 @@ class OrchestratorAgent(BaseAgent):
             )
 
         # 3. Langage naturel -> sélection de tools via LLM (si activé)
+        print("---- 3. Natural Language ----")
         if key is None and settings.AGENT_ROUTER_ENABLED:
             tool_selections = await self._select_tools(user_prompt)
             tool_results = await self._execute_tools(tool_selections)
@@ -92,6 +95,7 @@ class OrchestratorAgent(BaseAgent):
             )
 
         # 4. Fallback -> ChatAgent direct (slash inconnue ou routage désactivé)
+        print("---- 4. (Fallback) Appel Chat ----")
         return await self.chat_agent.process(
             thread=thread,
             context_messages=context_messages,
@@ -252,12 +256,12 @@ class OrchestratorAgent(BaseAgent):
         if not tool_results:
             return user_prompt
 
-        info_block = "\n".join(
-            f"- [{r.tool_name}]: {r.content}" for r in tool_results
+        info_block = ", ".join(
+            "{'" + r.tool_name + "' : '" + r.content + "'}" for r in tool_results
         )
         return (
-            f"Informations collectées par les outils :\n{info_block}\n\n"
-            f"Question de l'utilisateur : {user_prompt}"
+            f"[DATAS]\n{info_block.strip(', ')}\n[/DATA]\n\n"
+            f"[PROMPT]\n{user_prompt}\n[/PROMPT]\n\n"
         )
 
     @staticmethod

@@ -49,17 +49,18 @@ class Settings:
     # Intervalle de messages avant de déclencher un résumé (mémoire long terme)
     SUMMARY_INTERVAL: int = int(os.getenv("SUMMARY_INTERVAL", 6))
 
-    # Modèles par défaut
-    DEFAULT_CHAT_MODEL: str = "google/gemini-2.0-flash-001"
-    DEFAULT_SUMMARY_MODEL: str = "google/gemini-2.0-flash-001"
-
     # --- ROUTAGE AGENT ---
 
     # Active le routage intelligent via LLM (sinon fallback direct vers ChatAgent)
     AGENT_ROUTER_ENABLED: bool = os.getenv("AGENT_ROUTER_ENABLED", "false").lower() == "true"
 
-    # Modèle léger utilisé pour le routage LLM
-    DEFAULT_ROUTER_MODEL: str = "google/gemini-2.0-flash-001"
+    # --- MODEL ---
+
+    # Modèles par défaut
+    DEFAULT_CHAT_MODEL: str = os.getenv("DEFAULT_CHAT_MODEL", "mistralai/mistral-small-3.1-24b-instruct:free")
+    DEFAULT_SUMMARY_MODEL: str = os.getenv("DEFAULT_SUMMARY_MODEL", "openai/gpt-oss-120b:free")
+    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "google/gemini-2.0-flash-lite-preview-02-05:free")
+    DEFAULT_ROUTER_MODEL: str = os.getenv("DEFAULT_ROUTER_MODEL", "google/gemma-3-12b-it:free")
 
     # --- TIMEOUTS API ---
 

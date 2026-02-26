@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from fastapi import BackgroundTasks
+from app.database import SessionLocal
 
 from app import models, schemas
 from app.core.config import settings
@@ -11,6 +13,52 @@ router = APIRouter(prefix="/threads", tags=["Messages"])
 
 # Initialisation de l'orchestrateur (point d'entrée unique)
 orchestrator = OrchestratorAgent()
+
+
+async def update_thread_summary(
+        thread_id: str,
+        messages_for_summary: list,
+        model_name: str
+):
+    """
+    Tâche asynchrone pour mettre à jour le résumé du thread en arrière-plan.
+    """
+    # 1. Création d'une nouvelle session dédiée à la tâche de fond
+    print("DEBUG: Lancement de la Mise à jour du résumé en arrière-plan...")
+    db = SessionLocal()
+
+    try:
+        # 2. Récupération du thread
+        thread = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
+        if not thread:
+            print(f"DEBUG: Thread {thread_id} non trouvé pour le résumé.")
+            return
+
+        print(f"DEBUG: Lancement du résumé pour le thread {thread_id}...")
+
+        # 3. Appel à l'agent de résumé via l'orchestrateur
+        new_json_summary = await orchestrator.summary_agent.process(
+            messages_to_summarize=messages_for_summary,
+            current_summary_json=str(thread.current_summary) if thread.current_summary else "",
+            model_name=model_name,
+        )
+
+        # 4. Mise à jour si un résumé a été généré
+        if new_json_summary:
+            thread.current_summary = new_json_summary
+            db.add(thread)
+            db.commit()
+            print(f"DEBUG: Résumé mis à jour avec succès pour le thread {thread_id}")
+        else:
+            print(f"DEBUG: L'agent de résumé n'a pas renvoyé de contenu.")
+
+    except Exception as e:
+        print(f"ERROR: Échec lors de la mise à jour du résumé : {str(e)}")
+        db.rollback()
+
+    finally:
+        # 5. Toujours fermer la session manuellement dans une BackgroundTask
+        db.close()
 
 
 @router.get("/{thread_id}/messages", response_model=schemas.PaginatedMessages)
@@ -52,6 +100,7 @@ def get_messages(thread_id: str, db: Session = Depends(get_db), limit: int = 20,
 async def send_message(
         thread_id: str,
         payload: schemas.MessageCreate,
+        background_tasks: BackgroundTasks,
         db: Session = Depends(get_db)
 ):
     """
@@ -80,11 +129,21 @@ async def send_message(
             HTTPException:
                 - 404: If the specified thread is not found.
                 - 502: If the AI agent fails to return a valid content response.
+                :param db:
+                :param thread_id:
+                :param payload:
+                :param background_tasks:
     """
+
+    print("---- Nouveau message ----")
+
     # 1. Récupération du thread
     thread = db.query(models.Thread).filter(models.Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread non trouvé")
+
+    print("---- Payload ----")
+    print(payload)
 
     # 2. Sauvegarde du message utilisateur
     user_msg = models.Message(
@@ -92,6 +151,7 @@ async def send_message(
         role="user",
         content=payload.content
     )
+
     db.add(user_msg)
     db.commit()
     db.refresh(user_msg)
@@ -106,44 +166,62 @@ async def send_message(
         .all()
     )[::-1]
 
-    # 4. Appel de l'orchestrateur (routage intelligent)
-    ai_content = await orchestrator.process(
-        thread=thread,
-        context_messages=previous_messages,
-        user_prompt=payload.content,
-        model_name=payload.model_name,
-        db=db,
-    )
+    # 4. Appel de l'orchestrateur avec logique de secours (Fallback)
+    models_to_try = [payload.model_name, settings.FALLBACK_MODEL]
+    ai_content = None
+    final_model_used = None
 
-    if not ai_content or ai_content.strip() == "":
-        raise HTTPException(status_code=502, detail="L'IA n'a pas renvoyé de réponse.")
+    for model_attempt in models_to_try:
+        try:
+            ai_content = await orchestrator.process(
+                thread=thread,
+                context_messages=previous_messages,
+                user_prompt=payload.content,
+                model_name=model_attempt,
+                db=db,
+            )
+            if ai_content and ai_content.strip():
+                final_model_used = model_attempt
+                break
+        except Exception as e:
+            print(f"WARNING: Échec avec {model_attempt}: {e}")
+            continue
 
-    # 5. Sauvegarde de la réponse assistant
+    if not ai_content:
+        raise HTTPException(status_code=502, detail="Tous les modèles ont échoué.")
+
+    # 5. Sauvegarde de la réponse
     assistant_msg = models.Message(
         thread_id=thread_id,
         role="assistant",
         content=ai_content,
-        model_name=payload.model_name,
+        model_name=final_model_used,
         answer_of=user_msg.id
     )
     db.add(assistant_msg)
     db.commit()
     db.refresh(assistant_msg)
 
-    # 6. MISE À JOUR DU RÉSUMÉ (Logique de seuil robuste)
+    # 6. Mise à jour du résumé en ARRIÈRE-PLAN
+    # On ne bloque pas la réponse utilisateur pour le résumé
     total_msg_count = db.query(func.count(models.Message.id)).filter(
         models.Message.thread_id == thread_id
     ).scalar()
 
-    # On déclenche si on a atteint ou dépassé l'intervalle
-    threshold_reached = False
-
     # Vérifie si on a franchi une nouvelle centaine/dizaine définie par l'intervalle
     if (total_msg_count // settings.SUMMARY_INTERVAL) > ((total_msg_count - 2) // settings.SUMMARY_INTERVAL):
-        threshold_reached = True
 
-    if threshold_reached:
+        print("DEBUG: Mise à jour du résumé en arrière-plan...")
 
+        # On délègue la tâche lourde à BackgroundTasks
+        background_tasks.add_task(
+            update_thread_summary,
+            thread_id,
+            previous_messages + [user_msg, assistant_msg],
+            final_model_used
+        )
+
+        """
         # On récupère les messages pour le résumé
         messages_for_summary = previous_messages + [user_msg, assistant_msg]
 
@@ -158,6 +236,7 @@ async def send_message(
             db.add(thread)
             db.commit()
             print(f"DEBUG: Résumé mis à jour (Total messages: {total_msg_count})")
+        """
 
     return assistant_msg
 

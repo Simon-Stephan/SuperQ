@@ -49,7 +49,10 @@ class BaseAgent:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        payload = {"model": model, "messages": messages}
+        payload = {
+            "model": model,
+            "messages": messages
+        }
 
         # Utilisation des timeouts définis dans Settings
         async with httpx.AsyncClient() as client:
